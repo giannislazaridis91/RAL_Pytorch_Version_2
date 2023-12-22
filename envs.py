@@ -78,9 +78,9 @@ class LalEnv(object):
             n_start:            An integer indicating the size of the annotated set at the beginning. The initial batch size.
             
         Returns:
-            classifier_state:   A numpy.ndarray characterizing the current classifier of size of number of features for the state,
+            state:   A numpy.ndarray characterizing the current classifier of size of number of features for the state,
                                 in this case it is the size of the number of data samples in dataset.state_data.
-            next_action_state:  A numpy.ndarray of size #features characterizing actions (currently, 3) x #unlabeled datapoints
+            next_action:  A numpy.ndarray of size #features characterizing actions (currently, 3) x #unlabeled datapoints
                                 where each column corresponds to the vector characterizing each possible action.
         """
 
@@ -136,10 +136,10 @@ class LalEnv(object):
         self.episode_qualities.append(new_score) 
 
         # Get the features categorizing the state.     
-        classifier_state, next_action_state = self._get_state()
+        state, next_action = self._get_state()
         self.n_actions = np.size(self.indices_unknown)    
 
-        return classifier_state, next_action_state
+        return state, next_action
         
 
 
@@ -155,17 +155,16 @@ class LalEnv(object):
             action:             An integer indicating the position of a datapoint to label.
             
         Returns:
-            classifier_state:   A numpy.ndarray of size # features characterising state = # datasamples in dataset.state_data
+            state:   A numpy.ndarray of size # features characterising state = # datasamples in dataset.state_data
                                 that characterizes the current classifier.
-            next_action_state:  A numpy.ndarray of size # features characterising actions (currently, 3) x # unlabeled datapoint,
+            next_action:  A numpy.ndarray of size # features characterising actions (currently, 3) x # unlabeled datapoint,
                                 where each column corresponds to the vector characterizing each possible action.
             reward:             A float with the reward after adding a new datapoint.
             done:               A boolean indicator if the episode is terminated.
         """
 
-        # Action indicates the position of a datapoint in self.indices_unknown 
-        # that we want to sample in unknown_data
-        # The index in train_data should be retrieved 
+        # Action indicates the position of a datapoint in self.indices_unknown that we want to sample in unknown_data.
+        # The index in train_data should be retrieved.
         selection_absolute = self.indices_unknown[action]
 
         # Label a datapoint: add its index to known samples and remove from unknown.
@@ -179,12 +178,12 @@ class LalEnv(object):
         self.model.fit(known_data, known_labels)
 
         # Get a new state.
-        classifier_state, next_action_state = self._get_state() 
+        state, next_action = self._get_state() 
 
-        # Update the number of available actions:
+        # Update the number of available actions.
         self.n_actions = np.size(self.indices_unknown)
 
-        # Compute the quality of the current classifier:
+        # Compute the quality of the current classifier.
         test_prediction = self.model.predict(self.dataset.test_data)
         new_score = self.quality_method(self.dataset.test_labels, test_prediction)
         self.episode_qualities.append(new_score)
@@ -195,7 +194,7 @@ class LalEnv(object):
         # Check if this episode terminated.
         done = self._compute_is_terminal()
 
-        return classifier_state, next_action_state, reward, done
+        return state, next_action, reward, done
       
 
 
@@ -205,25 +204,25 @@ class LalEnv(object):
         Private function for computing the state depending on the classifier and next available actions.
         
         This function computes:
-        1) classifier_state that characterizes the current state of the classifier and it is computed as a function of predictions on the hold-out dataset 
-        2) next_action_state that characterizes all possible actions (unlabeled datapoints) that can be taken at the next step.
+        1) state that characterizes the current state of the classifier and it is computed as a function of predictions on the hold-out dataset 
+        2) next_action that characterizes all possible actions (unlabeled datapoints) that can be taken at the next step.
         
         Returns:
-            classifier_state:   A numpy.ndarray of size of number of datapoints in dataset.state_data 
+            state:   A numpy.ndarray of size of number of datapoints in dataset.state_data 
                                 characterizing the current classifier and, thus, the state of the environment.
-            next_action_state:  A numpy.ndarray of size #features characterizing actions (currently, 3) x #unlabeled datapoints 
+            next_action:  A numpy.ndarray of size #features characterizing actions (currently, 3) x #unlabeled datapoints 
                                 where each column corresponds to the vector characterizing each possible action.
         """
 
-        # COMPUTE CLASSIFIER_STATE.
+        # COMPUTE state.
         predictions = self.model.predict_proba(self.dataset.state_data)[:,0]
         predictions = np.array(predictions)
         idx = np.argsort(predictions)
 
         # The state representation is the *sorted* list of scores.
-        classifier_state = predictions[idx]
+        state = predictions[idx]
         
-        # COMPUTE ACTION_STATE.
+        # COMPUTE next_action.
         unknown_data = self.dataset.train_data[self.indices_unknown,:]
 
         # Prediction (score) of classifier on each unlabeled sample:
@@ -232,10 +231,10 @@ class LalEnv(object):
         a2 = np.mean(self.dataset.distances[self.indices_unknown,:][:,self.indices_unknown],axis=0)
         # Average distance to every labeled data point.
         a3 = np.mean(self.dataset.distances[self.indices_known,:][:,self.indices_unknown],axis=0)
-        # Compute the next_action_state.
-        next_action_state = np.concatenate(([a1], [a2], [a3]), axis=0)
+        # Compute the next_action.
+        next_action = np.concatenate(([a1], [a2], [a3]), axis=0)
 
-        return classifier_state, next_action_state
+        return state, next_action
     
 
 
@@ -270,7 +269,7 @@ class LalEnv(object):
         """
 
         # The self.n_actions contains a number of unlabeled datapoints that are left.
-        if self.n_actions==2:
+        if self.n_actions==5:
             print('We ran out of samples!')
             done = True
         else:
@@ -322,13 +321,13 @@ class LalEnvFirstAccuracy(LalEnv):
             The same as the parent class.
         """
 
-        classifier_state, next_action_state = LalEnv.reset(self, n_start=n_start)
+        state, next_action = LalEnv.reset(self, n_start=n_start)
         current_reward = self._compute_reward()
 
         # Store the current rewatd.
         self.rewards_bank.append(current_reward)
         
-        return classifier_state, next_action_state, current_reward
+        return state, next_action, current_reward
        
 
 
@@ -361,18 +360,26 @@ class LalEnvFirstAccuracy(LalEnv):
                 done = True
                 return done
         return done
-
-
-
-    def _find_batch_size(self, c_batch_size, c_reward, c_n_actions):
-
-        if c_reward > 0 and (c_batch_size+2) <= c_n_actions:
-            batch = c_batch_size+2
-        elif c_reward < 0 and (c_batch_size-2>0) and (c_batch_size-2) <= c_n_actions:
-            batch = c_batch_size-2
-        else:
-            batch = c_batch_size
-        return batch
     
+
+
+    def _find_batch_size(self, batch, reward, n_actions, max_batch):
+
+        if reward > 0 and (batch+5) <= n_actions:
+            batch = batch+5
+            if batch > max_batch:
+                batch = max_batch
+        elif reward < 0 and (batch-5>0) and (batch-5) <= n_actions:
+            batch = batch-5
+            if batch > max_batch:
+                batch = max_batch
+        else:
+            batch = batch
+            if batch > max_batch:
+                batch = max_batch
+        return batch
+
+
+
     def return_episode_qualities(self):
         return self.episode_qualities

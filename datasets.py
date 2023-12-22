@@ -56,8 +56,7 @@ class Dataset:
     def _keep_state_data(self):
 
         # The self.n_state_estimation value samples in training data are reserved for estimating the state.
-        self.train_data, self.state_data, self.train_labels, self.state_labels = train_test_split(
-            self.train_data, self.train_labels, test_size=self.n_state_estimation)
+        self.train_data, self.state_data, self.train_labels, self.state_labels = train_test_split(self.train_data, self.train_labels, test_size=self.n_state_estimation)
         
 
 
@@ -87,7 +86,7 @@ class DatasetUCI(Dataset):
     
 
 
-    def __init__(self, possible_names, n_state_estimation, subset, size=-1):
+    def __init__(self, possible_names, n_state_estimation=30, subset=-1, size=-1):
 
         # Inits a few attributes and the attributes of Dataset objects.
         self.possible_names = possible_names
@@ -130,8 +129,7 @@ class DatasetUCI(Dataset):
             train_test_labels = y[valid_indices,:]
 
             # Use a random half / half split for train and test data:
-            self.train_data, self.test_data, self.train_labels, self.test_labels = train_test_split(
-                train_test_data, train_test_labels, train_size=0.8)
+            self.train_data, self.test_data, self.train_labels, self.test_labels = train_test_split(train_test_data, train_test_labels, train_size=0.8)
             self._scale_data()
             self._keep_state_data()
             self._compute_distances()

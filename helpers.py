@@ -8,25 +8,25 @@ class Minibatch:
     Minibatch class that helps for gradient descent training.
 
     Attributes:
-        classifier_state:       A numpy.ndarray of size batch_size x # classifier features characterizing the state of classifier at the sampled iterations.
-        action_state:           A numpy.ndarray of size batch_size x # action features characterizing the action that was taken at the sampled iterations.
+        state:       A numpy.ndarray of size batch_size x # classifier features characterizing the state of classifier at the sampled iterations.
+        action:           A numpy.ndarray of size batch_size x # action features characterizing the action that was taken at the sampled iterations.
         reward:                 A numpy.ndarray of size batch_size.
-        next_classifier_state:  A numpy.ndarray of size batch_size x # classifier features.
-        next_action_state:      A list of size batch_size of numpy.ndarrays characterizing the possible actions that were available at the sampled iterations.
+        next_state:  A numpy.ndarray of size batch_size x # classifier features.
+        next_action:      A list of size batch_size of numpy.ndarrays characterizing the possible actions that were available at the sampled iterations.
         terminal:               A numpy.ndarray of size batch_size of booleans indicating if the iteration was terminal.
         indices:                A numpy.ndarray of size batch_size that contains indices of samples iterations in the replay buffer.
     """
     
 
 
-    def __init__(self, classifier_state, action_state, reward, next_classifier_state, next_action_state, terminal, indices):
+    def __init__(self, state, action, reward, next_state, next_action, terminal, indices):
 
         # Inits the Minibatch object and initializes the attributes with given values.   
-        self.classifier_state = classifier_state
-        self.action_state = action_state
+        self.state = state
+        self.action = action
         self.reward = reward
-        self.next_classifier_state = next_classifier_state
-        self.next_action_state = next_action_state
+        self.next_state = next_state
+        self.next_action = next_action
         self.terminal = terminal
         self.indices = indices
     
@@ -45,13 +45,13 @@ class ReplayBuffer:
                                     Goes from 0 till the buffer_size-1 and then starts from 0 again.
         max_td_error:               A float used to initialize the td error of newly added samples.
         prior_exp:                  A float that is used for turning the td error into a probability to be sampled. 
-        all_classifier_state:       A numpy.ndarray of size batch_size x #classifier features
+        all_state:       A numpy.ndarray of size batch_size x #classifier features
                                     characterising the state of classifier at the sampled iterations.
-        all_action_states:          A numpy.ndarray of size batch_size x #action features,
+        all_actions:          A numpy.ndarray of size batch_size x #action features,
                                     characterizing the action that was taken at the sampled iterations.
         all_rewards:                A numpy.ndarray of size batch_size.
-        all_next_classifier_states: A numpy.ndarray of size batch_size x #classifier features.
-        all_next_action_state:      A list of size batch_size of numpy.ndarrays,
+        all_next_states: A numpy.ndarray of size batch_size x #classifier features.
+        all_next_action:      A list of size batch_size of numpy.ndarrays,
                                     characterizing the possible actions that were available at the sampled iterations.
         all_terminals:              A numpy.ndarray of size batch_size of booleans indicating if the iteration was terminal.
         all_td_errors:              A numpy.ndarray of size batch_size with td errors of transactions 
@@ -72,14 +72,14 @@ class ReplayBuffer:
 
 
     
-    def _init_nparray(self, classifier_state, action_state, reward, next_classifier_state, next_action_state, terminal):
+    def _init_nparray(self, state, action, reward, next_state, next_action, terminal):
         
         # Initialize numpy arrays of all_xxx attributes to one transaction repeated buffer_size times.
-        self.all_classifier_states = np.array([classifier_state] * self.buffer_size)
-        self.all_action_state = [action_state] * self.buffer_size
+        self.all_states = np.array([state] * self.buffer_size)
+        self.all_action = [action] * self.buffer_size
         self.all_rewards = np.array([reward] * self.buffer_size)
-        self.all_next_classifier_states = np.array([next_classifier_state] * self.buffer_size)
-        self.all_next_action_states = [next_action_state] * self.buffer_size
+        self.all_next_states = np.array([next_state] * self.buffer_size)
+        self.all_next_actions = [next_action] * self.buffer_size
         self.all_terminals = np.array([terminal] * self.buffer_size)
         self.all_td_errors = np.array([self.max_td_error] * self.buffer_size)
 
@@ -89,20 +89,20 @@ class ReplayBuffer:
 
 
   
-    def store_transition(self, classifier_state, action_state, reward, next_classifier_state, next_action_state, terminal):
+    def store_transition(self, state, action, reward, next_state, next_action, terminal):
 
         # Add a new transaction to a replay buffer.
         # If buffer arrays are not yet initialized, initialize it.
         if self.n == 0:
-            self._init_nparray(classifier_state, action_state, reward, next_classifier_state, next_action_state, terminal)
+            self._init_nparray(state, action, reward, next_state, next_action, terminal)
             return
         
         # Write a transaction at a write_index position.
-        self.all_classifier_states[self.write_index] = classifier_state
-        self.all_action_state[self.write_index] = action_state
+        self.all_states[self.write_index] = state
+        self.all_action[self.write_index] = action
         self.all_rewards[self.write_index] = reward
-        self.all_next_classifier_states[self.write_index] = next_classifier_state
-        self.all_next_action_states[self.write_index] = next_action_state
+        self.all_next_states[self.write_index] = next_state
+        self.all_next_actions[self.write_index] = next_action
         self.all_terminals[self.write_index] = terminal
         self.all_td_errors[self.write_index] = self.max_td_error
 
@@ -140,11 +140,11 @@ class ReplayBuffer:
         minibatch_indices = np.random.choice(range(self.n), size=batch_size, replace=True, p=p)
 
         minibatch = Minibatch(
-            self.all_classifier_states[minibatch_indices],
-            [self.all_action_state[i] for i in minibatch_indices],
+            self.all_states[minibatch_indices],
+            [self.all_action[i] for i in minibatch_indices],
             self.all_rewards[minibatch_indices],
-            self.all_next_classifier_states[minibatch_indices],
-            [self.all_next_action_states[i] for i in minibatch_indices],
+            self.all_next_states[minibatch_indices],
+            [self.all_next_actions[i] for i in minibatch_indices],
             self.all_terminals[minibatch_indices],
             minibatch_indices,
         )

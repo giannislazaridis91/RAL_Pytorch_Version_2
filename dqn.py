@@ -3,8 +3,6 @@ import numpy as np
 import os
 from estimator import Estimator
 
-
-
 class DQN:
 
     """
@@ -38,6 +36,7 @@ class DQN:
                target_copy_factor=0.001,
                bias_average=0,
                action_length=3,
+               max_batch=20
               ):
 
         self.session = tf.compat.v1.Session()
@@ -48,19 +47,19 @@ class DQN:
         # TARGET ESTIMATOR
         with tf.compat.v1.variable_scope("target_dqn"):
 
-            self.target_estimator = Estimator(observation_length, action_length, is_target_dqn=False, var_scope_name="target_dqn", bias_average=bias_average)
+            self.target_estimator = Estimator(observation_length, action_length, is_target_dqn=False, var_scope_name="target_dqn", bias_average=bias_average, max_batch=max_batch)
 
         # ESTIMATOR
         with tf.compat.v1.variable_scope("dqn"):
 
-            self.estimator = Estimator(observation_length, action_length, is_target_dqn=True, var_scope_name="dqn", bias_average=bias_average)
-            
+            self.estimator = Estimator(observation_length, action_length, is_target_dqn=True, var_scope_name="dqn", bias_average=bias_average, max_batch=max_batch)
+
             # Placeholders for transactions from the replay buffer.
-            self._reward_placeholder = tf.placeholder(dtype=tf.float32, shape=(batch_size))
-            self._terminal_placeholder = tf.placeholder(dtype=tf.bool, shape=(batch_size))
+            self._reward_placeholder = tf.compat.v1.placeholder(dtype=tf.float32, shape=(batch_size))
+            self._terminal_placeholder = tf.compat.v1.placeholder(dtype=tf.bool, shape=(batch_size))
             
             # Placeholder for the max of the next prediction by target estimator.
-            self._next_best_prediction = tf.placeholder(dtype=tf.float32, shape=(batch_size))
+            self._next_best_prediction = tf.compat.v1.placeholder(dtype=tf.float32, shape=(batch_size))
             ones = tf.ones(shape=(batch_size))
             zeros = tf.zeros(shape=(batch_size))
             
@@ -87,14 +86,14 @@ class DQN:
             self._loss = tf.reduce_sum(tf.square(self._td_error))
             
             # Training operation with Adam optimiser.
-            opt = tf.train.AdamOptimizer(learning_rate)
-            self._train_op = opt.minimize(self._loss, var_list=tf.get_collection('dqn'))
+            opt = tf.compat.v1.train.AdamOptimizer(learning_rate)
+            self._train_op = opt.minimize(self._loss, var_list=tf.compat.v1.get_collection('dqn'))
             
             # Operation to copy parameter values (partially) to target estimator.
             copy_factor_complement = 1 - target_copy_factor
             self._copy_op = [target_var.assign(target_copy_factor * my_var + copy_factor_complement * target_var)
                               for (my_var, target_var)
-                              in zip(tf.get_collection('dqn'), tf.get_collection('target_dqn'))]
+                              in zip(tf.compat.v1.get_collection('dqn'), tf.compat.v1.get_collection('target_dqn'))]
 
         
         # STATS FOR TENSORBOARD.
@@ -135,7 +134,7 @@ class DQN:
 
 
 
-    def get_action(self, classifier_state, action_state, batch, n_tensorboard=1000000):
+    def get_action(self, state, action, batch, n_tensorboard=1000000):
         
         """
         Get the best action in a state.
@@ -146,15 +145,15 @@ class DQN:
         among all available actions with given action states.
         
         Args:
-            classifier_state:   A numpy.ndarray characterising the current classifier
+            state:   A numpy.ndarray characterising the current classifier
                                 size - number of data samples in dataset.state_data.
-            action_state:       A numpy.ndarray where each column corresponds to the vector characterising each possible action
+            action:       A numpy.ndarray where each column corresponds to the vector characterising each possible action
                                 size #features characterising actions (check env, now 3) x #unlabelled datapoints. 
             n_tensorboard:      An integer indicating how often stats should be written into tensorboard.
             
         Returns:
             max_action:         An integer indicating the index of the best action 
-                                in the list of actions in action_state.
+                                in the list of actions in action.
         """
         
         # Counter of how many times this function was called.
@@ -162,31 +161,34 @@ class DQN:
         self._check_initialized()
         
         # Repeat classification_state so that we have a copy of classification state for each possible action.
-        classifier_state = np.repeat([classifier_state], np.shape(action_state)[1], axis=0)
+        state = np.repeat([state], np.shape(action)[1], axis=0)
         
         # Predict q-values with current estimator.
+
+        help_me_predictions_next_action = []
+        for _ in range(20):
+            help_me_predictions_next_action.append(np.array([0,0,0]))
+        predictions_next_action=[]
+        for _ in range(len(action.T)):
+            predictions_next_action.append(help_me_predictions_next_action)
+        for i in range(len(predictions_next_action)):
+            predictions_next_action[i][0]=action.T[i]
+
         predictions = self.session.run(
             self.estimator.predictions,
-            feed_dict = {self.estimator.classifier_placeholder: classifier_state, 
-                         self.estimator.action_placeholder: action_state.T})
+            feed_dict = {self.estimator.classifier_placeholder: state, 
+                         self.estimator.action_placeholder: predictions_next_action})
+        
         prep = np.array(predictions)
-        batch = 6
         i=0
         max_action = []
-        print("\n\n\n\n\n")
-        print("max_action", max_action)
-        print("while i < batch:")
-        print("i", i)
-        print("batch", batch)
+
         while i < batch:
-            print("i", i)
-            print("action = np.random.choice(np.where(prep == prep.min())[0])")
-            print("length prep", len(prep))
-            print("prep", prep)
             action = np.random.choice(np.where(prep == prep.min())[0])
             max_action.append(action)
             prep = np.delete(prep, action)
-            print("prep after delete", len(prep))
+            if len(prep)==0:
+                break
             i+=1
 
         # Every n_tensorboard iterations, add stats to tensorboard.
@@ -197,7 +199,7 @@ class DQN:
             action_summary.value.add(simple_value=np.min(predictions), tag="action_values/min_action_value")
             self.summary_writer.add_summary(action_summary, self.i_actions_taken)
             self.summary_writer.flush()
-
+            
         return max_action
          
 
@@ -233,22 +235,23 @@ class DQN:
         self.i_train += 1
 
         # For every transaction in minibatch.
-        for next_classifier_state in minibatch.next_classifier_state:
+        for next_state in minibatch.next_state:
 
             # Predict q-value function value for all available actions.
-            n_next_actions = np.shape(minibatch.next_action_state[i])[1]
-            next_classifier_state = np.repeat([next_classifier_state], n_next_actions, axis=0)
+            n_next_actions = np.shape(minibatch.next_action[i])[1]
+            next_state = np.repeat([next_state], n_next_actions, axis=0)
             
             # Use target_estimator.
             target_predictions = self.session.run(
                 [self.target_estimator.predictions],
-                feed_dict = {self.target_estimator.classifier_placeholder: next_classifier_state, 
-                             self.target_estimator.action_placeholder: minibatch.next_action_state[i].T})
+                feed_dict = {self.target_estimator.classifier_placeholder: next_state, 
+                             self.target_estimator.action_placeholder: np.repeat(minibatch.next_action[i].T, 20, axis=0).reshape(minibatch.next_action[i].T.shape[0], 20, 3)})
             
             # Use estimator.
             predictions = self.session.run(
                 [self.estimator.predictions],
-                feed_dict = {self.estimator.classifier_placeholder: next_classifier_state, self.estimator.action_placeholder: minibatch.next_action_state[i].T})
+                feed_dict = {self.estimator.classifier_placeholder: next_state,
+                             self.estimator.action_placeholder: np.repeat(minibatch.next_action[i].T, 20, axis=0).reshape(minibatch.next_action[i].T.shape[0], 20, 3)})
             target_predictions = np.ravel(target_predictions)
             predictions = np.ravel(predictions)
             
@@ -264,22 +267,15 @@ class DQN:
 
         # OPTIMIZE
         # Update Q-function value estimation.
-        new_minibatch_action_state = []
-        for action_state in minibatch.action_state:
-            new_minibatch_action_state.append(np.mean(action_state.T, axis=0))
-        new_minibatch_action_state = np.array(new_minibatch_action_state)
-
-        # OPTIMIZE
-        # Update Q-function value estimation.
         _, loss, summ, _td_error = self.session.run(
             [self._train_op, self._loss, self.estimator.summaries, self._td_error],
-            feed_dict = {self.estimator.classifier_placeholder: minibatch.classifier_state,
-                self.estimator.action_placeholder: new_minibatch_action_state,
+            feed_dict = {self.estimator.classifier_placeholder: minibatch.state,
+                self.estimator.action_placeholder: minibatch.action,
                 self._next_best_prediction: max_prediction_batch,
                 self._reward_placeholder: minibatch.reward,
                 self._terminal_placeholder: minibatch.terminal,
-                self.target_estimator.classifier_placeholder: minibatch.next_classifier_state,
-                self.target_estimator.action_placeholder: new_minibatch_action_state})
+                self.target_estimator.classifier_placeholder: minibatch.next_state,
+                self.target_estimator.action_placeholder: minibatch.action})
         
         # Update target_estimator by partially copying the parameters of the estimator.
         self.session.run(self._copy_op)
